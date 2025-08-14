@@ -1,13 +1,9 @@
 /* Finance Toolkit — JS (paste into CodePen JS with Babel/JSX)
-   Mirrors Fitness Toolkit styling & interactions while adding:
-   - Currency placeholders using U.S. medians
-   - Live $-formatted inputs with thousand separators
-   - Global cadence toggle (Monthly / Annual) at top-right
-   - Simple/Advanced toggles for Income, Expenses, Savings
-   - Small “converted value” under primary cadence inputs
-   - Small “Est. federal effective tax rate (single)” under income
-   - Strategy dropdown in Optimize Plan (FIRE / Max Retirement / Minimize Expenses)
-   - Keeps fun-facts line, shuffle button, bouncing smiley, social handles, tooltips
+   Updates:
+   - Converts existing Profile inputs when switching Monthly ↔ Annual
+   - Moves cadence toggle + social under the subtitle (better on phones)
+   - Renames "Savings Rate" → "Disposable income / savings capacity"
+   - Shows capacity as $/mo plus a small % of income
 */
 const { useState, useMemo, useEffect, useRef } = React;
 
@@ -15,28 +11,28 @@ const { useState, useMemo, useEffect, useRef } = React;
    Number & currency helpers
 ========================= */
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
-const toNum = v => typeof v === 'number' ? v : v == null || v === '' ? NaN : Number(v);
-const cleanNumberText = s => {var _s;
-  if (typeof s !== 'string') s = String((_s = s) !== null && _s !== void 0 ? _s : '');
+const toNum = v => (typeof v === 'number' ? v : (v == null || v === '' ? NaN : Number(v)));
+const cleanNumberText = (s) => {
+  if (typeof s !== 'string') s = String(s ?? '');
   // Keep digits and a single dot
   const cleaned = s.replace(/[^\d.]/g, '').replace(/(\..*)\./g, '$1');
   return cleaned.length ? cleaned : '';
 };
-const parseCurrency = s => {
+const parseCurrency = (s) => {
   const c = cleanNumberText(s);
   if (!c) return NaN;
   const n = Number(c);
   return Number.isFinite(n) ? n : NaN;
 };
-const fmtCurrency0 = n => Number.isFinite(n) ?
-n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }) :
-'—';
-const fmtPercent1 = n => Number.isFinite(n) ?
-`${(n * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%` :
-'—';
-const fmt1 = n => Number.isFinite(n) ?
-n.toLocaleString(undefined, { maximumFractionDigits: 1 }) :
-'—';
+const fmtCurrency0 = (n) => Number.isFinite(n)
+  ? n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+  : '—';
+const fmtPercent1 = (n) => Number.isFinite(n)
+  ? `${(n * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+  : '—';
+const fmt1 = (n) => Number.isFinite(n)
+  ? n.toLocaleString(undefined, { maximumFractionDigits: 1 })
+  : '—';
 
 /* Animated number for nice transitions */
 const easeOutCubic = t => 1 - Math.pow(1 - t, 3);
@@ -45,7 +41,7 @@ function SmoothNumber({ value, format = 'int', className = '' }) {
   const startRef = useRef(null);
   const [display, setDisplay] = useState(Number.isFinite(value) ? value : NaN);
   useEffect(() => {
-    if (!Number.isFinite(value)) {setDisplay(NaN);return;}
+    if (!Number.isFinite(value)) { setDisplay(NaN); return; }
     const from = Number.isFinite(display) ? display : value;
     const dur = 650;
     cancelAnimationFrame(rafRef.current);
@@ -68,7 +64,7 @@ function SmoothNumber({ value, format = 'int', className = '' }) {
     return Number(display).toLocaleString(undefined, { maximumFractionDigits: 2 });
   })();
 
-  return /*#__PURE__*/React.createElement("span", { className: 'mono ' + className }, out);
+  return <span className={'mono ' + className}>{out}</span>;
 }
 
 /* =========================
@@ -76,20 +72,19 @@ function SmoothNumber({ value, format = 'int', className = '' }) {
    Simple estimate for effective federal rate; not advice
 ========================= */
 function estFedTaxSingleEffective(annualIncome) {
-  // Rough 2024-like brackets & standard deduction (approx)
-  // Source-like (approximation): 10, 12, 22, 24, 32, 35, 37
-  const stdDeduction = 14600; // approx single standard deduction
+  // Rough 2024-ish brackets & standard deduction (approx)
+  const stdDeduction = 14600;
   let ti = Math.max(0, (annualIncome || 0) - stdDeduction);
   const brackets = [
-  { upTo: 11600, rate: 0.10 },
-  { upTo: 47150, rate: 0.12 },
-  { upTo: 100525, rate: 0.22 },
-  { upTo: 191950, rate: 0.24 },
-  { upTo: 243725, rate: 0.32 },
-  { upTo: 609350, rate: 0.35 },
-  { upTo: Infinity, rate: 0.37 }];
-
-  let tax = 0,prev = 0;
+    { upTo: 11600,   rate: 0.10 },
+    { upTo: 47150,   rate: 0.12 },
+    { upTo: 100525,  rate: 0.22 },
+    { upTo: 191950,  rate: 0.24 },
+    { upTo: 243725,  rate: 0.32 },
+    { upTo: 609350,  rate: 0.35 },
+    { upTo: Infinity,rate: 0.37 },
+  ];
+  let tax = 0, prev = 0;
   for (const b of brackets) {
     if (ti <= 0) break;
     const chunk = Math.min(ti, b.upTo - prev);
@@ -97,7 +92,7 @@ function estFedTaxSingleEffective(annualIncome) {
     ti -= chunk;
     prev = b.upTo;
   }
-  const eff = annualIncome > 0 ? tax / annualIncome : NaN;
+  const eff = (annualIncome > 0) ? tax / annualIncome : NaN;
   return { tax, effective: eff };
 }
 
@@ -111,49 +106,49 @@ function SmartTooltip({ anchorRef, tip, href, open, onRequestClose, preferred = 
   const [pos, setPos] = React.useState({ top: 0, left: 0, placement: 'right', arrowLeft: 12, arrowTop: 12 });
 
   const computePosition = React.useCallback(() => {
-    const a = anchorRef === null || anchorRef === void 0 ? void 0 : anchorRef.current,t = tooltipRef === null || tooltipRef === void 0 ? void 0 : tooltipRef.current;
+    const a = anchorRef?.current, t = tooltipRef?.current;
     if (!a || !t) return;
     const rect = a.getBoundingClientRect();
     const vw = window.innerWidth || document.documentElement.clientWidth;
     const vh = window.innerHeight || document.documentElement.clientHeight;
 
-    let w = t.offsetWidth || 320,h = t.offsetHeight || 120;
-    const margin = 8,gap = 10;
+    let w = t.offsetWidth || 320, h = t.offsetHeight || 120;
+    const margin = 8, gap = 10;
 
     const fitsRight = rect.right + gap + w <= vw - margin;
-    const fitsLeft = rect.left - gap - w >= margin;
-    const fitsBottom = rect.bottom + gap + h <= vh - margin;
-    const fitsTop = rect.top - gap - h >= margin;
+    const fitsLeft  = rect.left  - gap - w >= margin;
+    const fitsBottom= rect.bottom + gap + h <= vh - margin;
+    const fitsTop   = rect.top    - gap - h >= margin;
 
     const order = (() => {
-      const arr = ['right', 'left', 'bottom', 'top'];
+      const arr = ['right','left','bottom','top'];
       const idx = arr.indexOf(preferred);
-      return idx === -1 ? arr : [arr[idx], ...arr.filter((_, i) => i !== idx)];
+      return idx === -1 ? arr : [arr[idx], ...arr.filter((_,i)=>i!==idx)];
     })();
 
-    let placement = 'right',top = 0,left = 0,arrowLeft = 12,arrowTop = 12;
+    let placement = 'right', top = 0, left = 0, arrowLeft = 12, arrowTop = 12;
 
     for (const p of order) {
-      if (p === 'right' && fitsRight) {placement = 'right';left = rect.right + gap;top = rect.top + (rect.height - h) / 2;top = Math.max(margin, Math.min(top, vh - h - margin));arrowTop = rect.top + rect.height / 2 - top;arrowTop = Math.max(10, Math.min(arrowTop, h - 10));arrowLeft = -6;break;}
-      if (p === 'left' && fitsLeft) {placement = 'left';left = rect.left - gap - w;top = rect.top + (rect.height - h) / 2;top = Math.max(margin, Math.min(top, vh - h - margin));arrowTop = rect.top + rect.height / 2 - top;arrowTop = Math.max(10, Math.min(arrowTop, h - 10));arrowLeft = w - 6;break;}
-      if (p === 'bottom' && fitsBottom) {placement = 'bottom';top = rect.bottom + gap;left = rect.left + (rect.width - w) / 2;left = Math.max(margin, Math.min(left, vw - w - margin));arrowLeft = rect.left + rect.width / 2 - left;arrowLeft = Math.max(10, Math.min(arrowLeft, w - 10));arrowTop = -6;break;}
-      if (p === 'top' && fitsTop) {placement = 'top';top = rect.top - gap - h;left = rect.left + (rect.width - w) / 2;left = Math.max(margin, Math.min(left, vw - w - margin));arrowLeft = rect.left + rect.width / 2 - left;arrowLeft = Math.max(10, Math.min(arrowLeft, w - 10));arrowTop = h - 6;break;}
+      if (p==='right' && fitsRight){ placement='right'; left=rect.right+gap; top=rect.top+(rect.height-h)/2; top=Math.max(margin, Math.min(top, vh-h-margin)); arrowTop=rect.top+rect.height/2-top; arrowTop=Math.max(10, Math.min(arrowTop, h-10)); arrowLeft=-6; break; }
+      if (p==='left'  && fitsLeft ){ placement='left';  left=rect.left-gap-w;  top=rect.top+(rect.height-h)/2; top=Math.max(margin, Math.min(top, vh-h-margin)); arrowTop=rect.top+rect.height/2-top; arrowTop=Math.max(10, Math.min(arrowTop, h-10)); arrowLeft=w-6; break; }
+      if (p==='bottom'&& fitsBottom){placement='bottom';top=rect.bottom+gap; left=rect.left+(rect.width-w)/2; left=Math.max(margin, Math.min(left, vw-w-margin)); arrowLeft=rect.left+rect.width/2-left; arrowLeft=Math.max(10, Math.min(arrowLeft, w-10)); arrowTop=-6; break; }
+      if (p==='top'   && fitsTop   ){placement='top';   top=rect.top-gap-h;   left=rect.left+(rect.width-w)/2; left=Math.max(margin, Math.min(left, vw-w-margin)); arrowLeft=rect.left+rect.width/2-left; arrowLeft=Math.max(10, Math.min(arrowLeft, w-10)); arrowTop=h-6; break; }
     }
 
-    if (!['right', 'left', 'bottom', 'top'].includes(placement)) {
+    if (!['right','left','bottom','top'].includes(placement)){
       placement = preferred || 'right';
-      if (placement === 'left') {left = rect.left - gap - w;top = rect.top + (rect.height - h) / 2;} else
-      if (placement === 'bottom') {top = rect.bottom + gap;left = rect.left + (rect.width - w) / 2;} else
-      if (placement === 'top') {top = rect.top - gap - h;left = rect.left + (rect.width - w) / 2;} else
-      {left = rect.right + gap;top = rect.top + (rect.height - h) / 2;}
-      left = Math.max(margin, Math.min(left, vw - w - margin));
-      top = Math.max(margin, Math.min(top, vh - h - margin));
-      arrowTop = Math.max(10, Math.min(rect.top + rect.height / 2 - top, h - 10));
-      arrowLeft = Math.max(10, Math.min(rect.left + rect.width / 2 - left, w - 10));
-      if (placement === 'right') arrowLeft = -6;
-      if (placement === 'left') arrowLeft = w - 6;
-      if (placement === 'bottom') arrowTop = -6;
-      if (placement === 'top') arrowTop = h - 6;
+      if (placement==='left'){ left=rect.left-gap-w; top=rect.top+(rect.height-h)/2; }
+      else if (placement==='bottom'){ top=rect.bottom+gap; left=rect.left+(rect.width-w)/2; }
+      else if (placement==='top'){ top=rect.top-gap-h; left=rect.left+(rect.width-w)/2; }
+      else { left=rect.right+gap; top=rect.top+(rect.height-h)/2; }
+      left=Math.max(margin, Math.min(left, vw-w-margin));
+      top =Math.max(margin, Math.min(top,  vh-h-margin));
+      arrowTop = Math.max(10, Math.min(rect.top + rect.height/2 - top, h-10));
+      arrowLeft= Math.max(10, Math.min(rect.left + rect.width/2  - left, w-10));
+      if (placement==='right') arrowLeft=-6;
+      if (placement==='left')  arrowLeft=w-6;
+      if (placement==='bottom')arrowTop=-6;
+      if (placement==='top')   arrowTop=h-6;
     }
 
     setPos({ top, left, placement, arrowLeft, arrowTop });
@@ -162,16 +157,16 @@ function SmartTooltip({ anchorRef, tip, href, open, onRequestClose, preferred = 
   React.useEffect(() => {
     if (open) {
       setMounted(true);
-      requestAnimationFrame(() => {setVisible(true);computePosition();requestAnimationFrame(computePosition);});
+      requestAnimationFrame(() => { setVisible(true); computePosition(); requestAnimationFrame(computePosition); });
       const onScroll = () => computePosition();
       const onResize = () => computePosition();
       window.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('resize', onResize);
-      const t = tooltipRef.current,a = anchorRef === null || anchorRef === void 0 ? void 0 : anchorRef.current;
+      const t = tooltipRef.current, a = anchorRef?.current;
       const ro = new ResizeObserver(() => computePosition());
       if (t) ro.observe(t);
       if (a) ro.observe(a);
-      return () => {window.removeEventListener('scroll', onScroll);window.removeEventListener('resize', onResize);ro.disconnect();};
+      return () => { window.removeEventListener('scroll', onScroll); window.removeEventListener('resize', onResize); ro.disconnect(); };
     } else {
       setVisible(false);
       const id = setTimeout(() => setMounted(false), 160);
@@ -182,14 +177,14 @@ function SmartTooltip({ anchorRef, tip, href, open, onRequestClose, preferred = 
   useEffect(() => {
     if (!open) return;
     const onDocClick = e => {
-      const t = tooltipRef.current,a = anchorRef === null || anchorRef === void 0 ? void 0 : anchorRef.current;
+      const t = tooltipRef.current, a = anchorRef?.current;
       if (!t || !a) return;
-      if (!t.contains(e.target) && !a.contains(e.target)) onRequestClose === null || onRequestClose === void 0 ? void 0 : onRequestClose();
+      if (!t.contains(e.target) && !a.contains(e.target)) onRequestClose?.();
     };
-    const onKey = e => {if (e.key === 'Escape') onRequestClose === null || onRequestClose === void 0 ? void 0 : onRequestClose();};
+    const onKey = e => { if (e.key === 'Escape') onRequestClose?.(); };
     document.addEventListener('mousedown', onDocClick, true);
     document.addEventListener('keydown', onKey);
-    return () => {document.removeEventListener('mousedown', onDocClick, true);document.removeEventListener('keydown', onKey);};
+    return () => { document.removeEventListener('mousedown', onDocClick, true); document.removeEventListener('keydown', onKey); };
   }, [open, onRequestClose, anchorRef]);
 
   if (!mounted) return null;
@@ -199,131 +194,131 @@ function SmartTooltip({ anchorRef, tip, href, open, onRequestClose, preferred = 
     maxWidth: 'min(92vw, 360px)',
     opacity: visible ? 1 : 0,
     transform:
-    pos.placement === 'right' ? visible ? 'translateX(0) scale(1)' : 'translateX(6px) scale(0.98)' :
-    pos.placement === 'left' ? visible ? 'translateX(0) scale(1)' : 'translateX(-6px) scale(0.98)' :
-    visible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.98)',
+      pos.placement === 'right' ? (visible ? 'translateX(0) scale(1)' : 'translateX(6px) scale(0.98)') :
+      pos.placement === 'left'  ? (visible ? 'translateX(0) scale(1)' : 'translateX(-6px) scale(0.98)') :
+                                  (visible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.98)'),
     transition: 'opacity 140ms ease, transform 160ms cubic-bezier(.2,.7,.2,1)',
     transformOrigin:
-    pos.placement === 'right' ? 'left center' :
-    pos.placement === 'left' ? 'right center' :
-    pos.placement === 'bottom' ? 'top center' : 'bottom center' };
-
+      pos.placement === 'right' ? 'left center' :
+      pos.placement === 'left'  ? 'right center' :
+      pos.placement === 'bottom'? 'top center' : 'bottom center'
+  };
 
   const arrowCommon = 'absolute h-3 w-3 rotate-45 bg-white border border-slate-200 shadow-sm';
   const arrowStyle =
-  pos.placement === 'right' ? { top: pos.arrowTop, left: -6 } :
-  pos.placement === 'left' ? { top: pos.arrowTop, left: 'calc(100% - 6px)' } :
-  pos.placement === 'bottom' ? { left: pos.arrowLeft, top: -6 } :
-  { left: pos.arrowLeft, top: 'calc(100% - 6px)' };
+    pos.placement === 'right' ? { top: pos.arrowTop, left: -6 } :
+    pos.placement === 'left'  ? { top: pos.arrowTop, left: 'calc(100% - 6px)' } :
+    pos.placement === 'bottom'? { left: pos.arrowLeft, top: -6 } :
+                                 { left: pos.arrowLeft, top: 'calc(100% - 6px)' };
 
-  return ReactDOM.createPortal( /*#__PURE__*/
-  React.createElement("div", { ref: tooltipRef, className: "fixed z-[61] pointer-events-auto", style: style, role: "tooltip" }, /*#__PURE__*/
-  React.createElement("div", { className: arrowCommon, style: arrowStyle, "aria-hidden": "true" }), /*#__PURE__*/
-  React.createElement("div", {
-    className: "rounded-xl border border-slate-200 shadow-lg bg-white/95 backdrop-blur p-3 text-xs text-slate-700",
-    onMouseEnter: e => e.stopPropagation(),
-    onMouseLeave: () => onRequestClose === null || onRequestClose === void 0 ? void 0 : onRequestClose(),
-    style: { lineHeight: 1.35 } }, /*#__PURE__*/
-
-  React.createElement("div", { style: { whiteSpace: 'pre-line' } }, tip || ''),
-  href && /*#__PURE__*/
-  React.createElement("div", { className: "mt-2" }, /*#__PURE__*/
-  React.createElement("a", { className: "underline", href: href, target: "_blank", rel: "noreferrer" }, "Source")))),
-
-
-
-
-  document.body);
-
+  return ReactDOM.createPortal(
+    <div ref={tooltipRef} className="fixed z-[61] pointer-events-auto" style={style} role="tooltip">
+      <div className={arrowCommon} style={arrowStyle} aria-hidden="true" />
+      <div
+        className="rounded-xl border border-slate-200 shadow-lg bg-white/95 backdrop-blur p-3 text-xs text-slate-700"
+        onMouseEnter={e => e.stopPropagation()}
+        onMouseLeave={() => onRequestClose?.()}
+        style={{ lineHeight: 1.35 }}
+      >
+        <div style={{ whiteSpace: 'pre-line' }}>{tip || ''}</div>
+        {href && (
+          <div className="mt-2">
+            <a className="underline" href={href} target="_blank" rel="noreferrer">Source</a>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
 }
 const Info = ({ abbr, tip, href }) => {
   const [open, setOpen] = React.useState(false);
   const btnRef = React.useRef(null);
   const timers = React.useRef({ open: null, close: null });
-  const clearTimers = () => {if (timers.current.open) clearTimeout(timers.current.open);if (timers.current.close) clearTimeout(timers.current.close);timers.current.open = timers.current.close = null;};
-  const openWithDelay = () => {clearTimers();timers.current.open = setTimeout(() => setOpen(true), 70);};
-  const closeWithDelay = () => {clearTimers();timers.current.close = setTimeout(() => setOpen(false), 200);};
+  const clearTimers = () => { if (timers.current.open) clearTimeout(timers.current.open); if (timers.current.close) clearTimeout(timers.current.close); timers.current.open = timers.current.close = null; };
+  const openWithDelay  = () => { clearTimers(); timers.current.open  = setTimeout(() => setOpen(true), 70); };
+  const closeWithDelay = () => { clearTimers(); timers.current.close = setTimeout(() => setOpen(false), 200); };
   React.useEffect(() => () => clearTimers(), []);
-  return /*#__PURE__*/(
-    React.createElement("span", { className: "inline-flex items-center gap-1 text-xs text-slate-500 ml-1" },
-    abbr && abbr !== 'i' && /*#__PURE__*/React.createElement("span", { className: "font-semibold" }, "(", abbr, ")"), /*#__PURE__*/
-    React.createElement("button", {
-      ref: btnRef,
-      className: "icon-btn hover:bg-slate-100 transition-colors duration-150",
-      type: "button",
-      "aria-label": tip || abbr || 'Info',
-      "aria-expanded": open ? 'true' : 'false',
-      onMouseEnter: openWithDelay,
-      onMouseLeave: closeWithDelay,
-      onFocus: openWithDelay,
-      onBlur: () => setOpen(false),
-      onClick: () => setOpen(v => !v) }, "i"), /*#__PURE__*/
-
-    React.createElement(SmartTooltip, {
-      anchorRef: btnRef,
-      tip: tip,
-      href: href,
-      open: open,
-      onRequestClose: () => setOpen(false),
-      preferred: "right" })));
-
-
-
+  return (
+    <span className="inline-flex items-center gap-1 text-xs text-slate-500 ml-1">
+      {abbr && abbr !== 'i' && <span className="font-semibold">({abbr})</span>}
+      <button
+        ref={btnRef}
+        className="icon-btn hover:bg-slate-100 transition-colors duration-150"
+        type="button"
+        aria-label={tip || abbr || 'Info'}
+        aria-expanded={open ? 'true' : 'false'}
+        onMouseEnter={openWithDelay}
+        onMouseLeave={closeWithDelay}
+        onFocus={openWithDelay}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen(v => !v)}
+      >i</button>
+      <SmartTooltip
+        anchorRef={btnRef}
+        tip={tip}
+        href={href}
+        open={open}
+        onRequestClose={() => setOpen(false)}
+        preferred="right"
+      />
+    </span>
+  );
 };
 
 /* =========================
    Small UI atoms
 ========================= */
-const Section = ({ title, right, children }) => /*#__PURE__*/
-React.createElement("section", { className: "card p-4 mb-4" }, /*#__PURE__*/
-React.createElement("header", { className: "flex items-center justify-between mb-3" }, /*#__PURE__*/
-React.createElement("h2", { className: "text-lg font-semibold" }, title),
-right),
+const Section = ({ title, right, children }) => (
+  <section className="card p-4 mb-4">
+    <header className="flex items-center justify-between mb-3">
+      <h2 className="text-lg font-semibold">{title}</h2>
+      {right}
+    </header>
+    {children}
+  </section>
+);
 
-children);
+const InstagramSVG = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+    <path d="M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7zm5 3.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zm0 2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM18 6.2a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/>
+  </svg>
+);
+const TikTokSVG = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" className="w-4 h-4" fill="currentColor">
+    <path d="M30 6c1.6 3.6 4.6 6.3 8.3 7.2v6.1c-3.2-.1-6.2-1.1-8.7-2.8v12.3c0 7.1-5.7 12.8-12.8 12.8S4 35.9 4 28.8s5.7-12.8 12.8-12.8c1.2 0 2.4.2 3.5.5v6.4c-.9-.4-1.9-.6-3-.6-3.4 0-6.3 2.8-6.3 6.3s2.8 6.3 6.3 6.3 6.3-2.8 6.3-6.3V6h6.4z"/>
+  </svg>
+);
+const Social = () => (
+  <div className="flex items-center gap-4 text-sm">
+    <a className="inline-flex items-center gap-1 underline" href="https://www.instagram.com/luisitin2001" target="_blank" rel="noreferrer" title="@luisitin2001 on Instagram">
+      <InstagramSVG/> Instagram
+    </a>
+    <span className="text-slate-400">•</span>
+    <a className="inline-flex items-center gap-1 underline" href="https://www.tiktok.com/@luisitin2001" target="_blank" rel="noreferrer" title="@luisitin2001 on TikTok">
+      <TikTokSVG/> TikTok
+    </a>
+  </div>
+);
 
-
-
-const InstagramSVG = () => /*#__PURE__*/
-React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", className: "w-4 h-4", fill: "currentColor" }, /*#__PURE__*/
-React.createElement("path", { d: "M7 2h10a5 5 0 0 1 5 5v10a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5V7a5 5 0 0 1 5-5zm0 2a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7zm5 3.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zm0 2a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zM18 6.2a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" }));
-
-
-const TikTokSVG = () => /*#__PURE__*/
-React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 48 48", className: "w-4 h-4", fill: "currentColor" }, /*#__PURE__*/
-React.createElement("path", { d: "M30 6c1.6 3.6 4.6 6.3 8.3 7.2v6.1c-3.2-.1-6.2-1.1-8.7-2.8v12.3c0 7.1-5.7 12.8-12.8 12.8S4 35.9 4 28.8s5.7-12.8 12.8-12.8c1.2 0 2.4.2 3.5.5v6.4c-.9-.4-1.9-.6-3-.6-3.4 0-6.3 2.8-6.3 6.3s2.8 6.3 6.3 6.3 6.3-2.8 6.3-6.3V6h6.4z" }));
-
-
-const Social = () => /*#__PURE__*/
-React.createElement("div", { className: "flex items-center gap-4 text-sm" }, /*#__PURE__*/
-React.createElement("a", { className: "inline-flex items-center gap-1 underline", href: "https://www.instagram.com/luisitin2001", target: "_blank", rel: "noreferrer", title: "@luisitin2001 on Instagram" }, /*#__PURE__*/
-React.createElement(InstagramSVG, null), " Instagram"), /*#__PURE__*/
-
-React.createElement("span", { className: "text-slate-400" }, "\u2022"), /*#__PURE__*/
-React.createElement("a", { className: "inline-flex items-center gap-1 underline", href: "https://www.tiktok.com/@luisitin2001", target: "_blank", rel: "noreferrer", title: "@luisitin2001 on TikTok" }, /*#__PURE__*/
-React.createElement(TikTokSVG, null), " TikTok"));
-
-
-
-
-/* Cadence toggle — top-right */
-function CadenceToggle({ cadence, setCadence }) {
-  return /*#__PURE__*/(
-    React.createElement("div", { className: "flex items-center gap-2 text-xs" }, /*#__PURE__*/
-    React.createElement("span", { className: "text-slate-500 hidden sm:inline" }, "View"), /*#__PURE__*/
-    React.createElement("div", { className: "inline-flex rounded-full border bg-white overflow-hidden" },
-    ['Monthly', 'Annual'].map((c) => /*#__PURE__*/
-    React.createElement("button", {
-      key: c,
-      onClick: () => setCadence(c),
-      className: (cadence === c ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50') + ' px-2 py-1' },
-
-    c)))));
-
-
-
-
-
+/* Cadence toggle — parent supplies onChange that handles conversion */
+function CadenceToggle({ cadence, onChange }) {
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      <span className="text-slate-500 hidden sm:inline">View</span>
+      <div className="inline-flex rounded-full border bg-white overflow-hidden">
+        {['Monthly','Annual'].map(c => (
+          <button
+            key={c}
+            onClick={() => onChange(c)}
+            className={(cadence===c?'bg-slate-900 text-white':'text-slate-700 hover:bg-slate-50')+' px-2 py-1'}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /* Currency input with $ + commas */
@@ -339,25 +334,24 @@ function CurrencyInput({ value, onChange, placeholder }) {
 
   const display = text ? fmtCurrency0(parseCurrency(text)) : '';
 
-  const handleChange = e => {
+  const handleChange = (e) => {
     const raw = e.target.value;
     const cleaned = cleanNumberText(raw);
     setText(cleaned);
     const n = parseCurrency(cleaned);
-    onChange === null || onChange === void 0 ? void 0 : onChange(Number.isFinite(n) ? n : NaN);
+    onChange?.(Number.isFinite(n) ? n : NaN);
   };
 
-  // Keep formatting live but allow editing: render formatted, but accept typing
-  return /*#__PURE__*/(
-    React.createElement("input", {
-      type: "text",
-      inputMode: "numeric",
-      className: "field",
-      placeholder: placeholder,
-      value: display,
-      onChange: handleChange }));
-
-
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      className="field"
+      placeholder={placeholder}
+      value={display}
+      onChange={handleChange}
+    />
+  );
 }
 
 /* =========================
@@ -397,82 +391,82 @@ function loanPayment({ principal = 0, apr = 0, years = 0 }) {
    Info Panel (short references)
 ========================= */
 const FIN_INFO = [
-{
-  id: 'compounding',
-  label: 'Compound Interest & Starting Early',
-  body: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/
-  React.createElement("p", { className: "mb-2" }, "Compounding grows money exponentially. Small amounts invested early can beat larger amounts invested later."), /*#__PURE__*/
-  React.createElement("ul", { className: "list-disc pl-5 space-y-1" }, /*#__PURE__*/
-  React.createElement("li", null, "Rule of 72: years to double \u2248 72 / annual return."), /*#__PURE__*/
-  React.createElement("li", null, "Monthly contributions and time are your superpowers."))),
-
-
-  sources: [{ label: 'investor.gov – Compound Interest', href: 'https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator' }] },
-
-{
-  id: 'fees',
-  label: 'Expense Ratios & Fees',
-  body: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/
-  React.createElement("p", { className: "mb-2" }, "Fees compound too and can dramatically reduce ending wealth over decades."), /*#__PURE__*/
-  React.createElement("ul", { className: "list-disc pl-5 space-y-1" }, /*#__PURE__*/
-  React.createElement("li", null, "Favor low-cost, diversified funds for long horizons."))),
-
-
-  sources: [{ label: 'bogleheads.org – Expense ratios', href: 'https://www.bogleheads.org/wiki/Expense_ratios' }] },
-
-{
-  id: 'mortgage',
-  label: 'Loans & Mortgages',
-  body: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/
-  React.createElement("p", { className: "mb-2" }, "Amortized loans have fixed payments; most interest is front-loaded early in the schedule."), /*#__PURE__*/
-  React.createElement("ul", { className: "list-disc pl-5 space-y-1" }, /*#__PURE__*/
-  React.createElement("li", null, "Shorter terms \u2192 higher payment but far less total interest."), /*#__PURE__*/
-  React.createElement("li", null, "Extra principal payments can save years and thousands."))),
-
-
-  sources: [{ label: 'consumerfinance.gov – Mortgages', href: 'https://www.consumerfinance.gov/owning-a-home/mortgage-payment-calculator/' }] },
-
-{
-  id: 'emergency',
-  label: 'Emergency Funds',
-  body: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/
-  React.createElement("p", { className: "mb-2" }, "Cash buffers help you avoid high-interest debt when life happens."), /*#__PURE__*/
-  React.createElement("ul", { className: "list-disc pl-5 space-y-1" }, /*#__PURE__*/
-  React.createElement("li", null, "Typical guidance: 3\u20136 months of expenses (more if income varies)."))),
-
-
-  sources: [{ label: 'consumerfinance.gov – Savings', href: 'https://www.consumerfinance.gov/start-small-save-up/' }] }];
-
-
-function InfoPanel() {var _item$sources;
+  {
+    id: 'compounding',
+    label: 'Compound Interest & Starting Early',
+    body: <>
+      <p className="mb-2">Compounding grows money exponentially. Small amounts invested early can beat larger amounts invested later.</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>Rule of 72: years to double ≈ 72 / annual return.</li>
+        <li>Monthly contributions and time are your superpowers.</li>
+      </ul>
+    </>,
+    sources: [{ label: 'investor.gov – Compound Interest', href: 'https://www.investor.gov/financial-tools-calculators/calculators/compound-interest-calculator' }]
+  },
+  {
+    id: 'fees',
+    label: 'Expense Ratios & Fees',
+    body: <>
+      <p className="mb-2">Fees compound too and can dramatically reduce ending wealth over decades.</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>Favor low-cost, diversified funds for long horizons.</li>
+      </ul>
+    </>,
+    sources: [{ label: 'bogleheads.org – Expense ratios', href: 'https://www.bogleheads.org/wiki/Expense_ratios' }]
+  },
+  {
+    id: 'mortgage',
+    label: 'Loans & Mortgages',
+    body: <>
+      <p className="mb-2">Amortized loans have fixed payments; most interest is front-loaded early in the schedule.</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>Shorter terms → higher payment but far less total interest.</li>
+        <li>Extra principal payments can save years and thousands.</li>
+      </ul>
+    </>,
+    sources: [{ label: 'consumerfinance.gov – Mortgages', href: 'https://www.consumerfinance.gov/owning-a-home/mortgage-payment-calculator/' }]
+  },
+  {
+    id: 'emergency',
+    label: 'Emergency Funds',
+    body: <>
+      <p className="mb-2">Cash buffers help you avoid high-interest debt when life happens.</p>
+      <ul className="list-disc pl-5 space-y-1">
+        <li>Typical guidance: 3–6 months of expenses (more if income varies).</li>
+      </ul>
+    </>,
+    sources: [{ label: 'consumerfinance.gov – Savings', href: 'https://www.consumerfinance.gov/start-small-save-up/' }]
+  },
+];
+function InfoPanel() {
   const [key, setKey] = useState('compounding');
   const item = useMemo(() => FIN_INFO.find(x => x.id === key) || FIN_INFO[0], [key]);
-  return /*#__PURE__*/(
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("div", { className: "grid sm:grid-cols-3 gap-3" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Topic"), /*#__PURE__*/
-    React.createElement("select", { className: "field", value: key, onChange: e => setKey(e.target.value) },
-    FIN_INFO.map(x => /*#__PURE__*/React.createElement("option", { key: x.id, value: x.id }, x.label))))), /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "mt-3 p-3 rounded-xl border bg-white/70 fade-slide-in" }, /*#__PURE__*/
-    React.createElement("div", { className: "text-sm space-y-2" }, item.body),
-    ((_item$sources = item.sources) === null || _item$sources === void 0 ? void 0 : _item$sources.length) > 0 && /*#__PURE__*/
-    React.createElement("div", { className: "text-xs text-slate-600 mt-3" }, "Sources:",
-    ' ',
-    item.sources.map((s, i) => /*#__PURE__*/
-    React.createElement(React.Fragment, { key: s.href }, /*#__PURE__*/
-    React.createElement("a", { className: "underline", href: s.href, target: "_blank", rel: "noreferrer" }, s.label),
-    i < item.sources.length - 1 ? ', ' : ''))))));
-
-
-
-
-
-
-
+  return (
+    <>
+      <div className="grid sm:grid-cols-3 gap-3">
+        <div>
+          <label className="block text-sm font-medium">Topic</label>
+          <select className="field" value={key} onChange={e => setKey(e.target.value)}>
+            {FIN_INFO.map(x => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="mt-3 p-3 rounded-xl border bg-white/70 fade-slide-in">
+        <div className="text-sm space-y-2">{item.body}</div>
+        {item.sources?.length > 0 && (
+          <div className="text-xs text-slate-600 mt-3">
+            Sources:{' '}
+            {item.sources.map((s, i) => (
+              <React.Fragment key={s.href}>
+                <a className="underline" href={s.href} target="_blank" rel="noreferrer">{s.label}</a>
+                {i < item.sources.length - 1 ? ', ' : ''}
+              </React.Fragment>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
+  );
 }
 
 /* =========================
@@ -482,21 +476,21 @@ function App() {
   const [view, setView] = useState('Profile');
   const [cadence, setCadence] = useState('Monthly'); // 'Monthly' | 'Annual'
 
-  // Fun facts (same format + shuffle)
+  // Fun facts
   const FUN = [
-  'Rule of 72: at 8% annual growth, money doubles in ~9 years.',
-  'Fees compound too — a 1% fee can erase tens of thousands over decades.',
-  'Time in the market often beats timing the market.',
-  'Most mortgage interest is paid early in the loan schedule.',
-  'An emergency fund (3–6 months) can keep you out of high-interest debt.',
-  'Small contributions started early can beat larger contributions started later.',
-  'Extra principal payments can save years and thousands on a mortgage.',
-  'Diversification reduces risk without giving up much return.',
-  'Automating savings increases follow-through and reduces decision fatigue.',
-  'Tax-advantaged accounts (401k/IRA) can accelerate compounding.',
-  'High-APR debt “earns” against you; paying it is a guaranteed return.',
-  'Inflation reduces purchasing power; consider real (after-inflation) returns.'];
-
+    'Rule of 72: at 8% annual growth, money doubles in ~9 years.',
+    'Fees compound too — a 1% fee can erase tens of thousands over decades.',
+    'Time in the market often beats timing the market.',
+    'Most mortgage interest is paid early in the loan schedule.',
+    'An emergency fund (3–6 months) can keep you out of high-interest debt.',
+    'Small contributions started early can beat larger contributions started later.',
+    'Extra principal payments can save years and thousands on a mortgage.',
+    'Diversification reduces risk without giving up much return.',
+    'Automating savings increases follow-through and reduces decision fatigue.',
+    'Tax-advantaged accounts (401k/IRA) can accelerate compounding.',
+    'High-APR debt “earns” against you; paying it is a guaranteed return.',
+    'Inflation reduces purchasing power; consider real (after-inflation) returns.'
+  ];
   const [factIdx, setFactIdx] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setFactIdx(i => (i + 1) % FUN.length), 10000);
@@ -505,17 +499,17 @@ function App() {
   const shuffleFact = () => setFactIdx(i => (i + 1) % FUN.length);
 
   /* ===== Profile state (with Simple/Advanced toggles) ===== */
-  const [incMode, setIncMode] = useState('Simple'); // Income: Simple | Advanced
-  const [expMode, setExpMode] = useState('Simple'); // Expenses: Simple | Advanced
-  const [savMode, setSavMode] = useState('Simple'); // Savings: Simple | Advanced
+  const [incMode, setIncMode] = useState('Simple');     // Income: Simple | Advanced
+  const [expMode, setExpMode] = useState('Simple');     // Expenses: Simple | Advanced
+  const [savMode, setSavMode] = useState('Simple');     // Savings: Simple | Advanced
 
-  // Placeholders using rough U.S. medians (not authoritative; for UX only)
-  const medianAnnualIncome = 74000; // placeholder (household annual)
+  // Placeholders using rough U.S. medians (UX only)
+  const medianAnnualIncome = 74000;
   const medianMonthlyIncome = Math.round(medianAnnualIncome / 12);
-  const medianMonthlyExpenses = 4000; // placeholder
-  const medianLiquidSavings = 5300; // placeholder
+  const medianMonthlyExpenses = 4000;
+  const medianLiquidSavings = 5300;
 
-  // Income (Simple/Advanced) — values entered in primary cadence; we convert internally
+  // Income (Simple/Advanced) — values entered in current cadence; we convert them when cadence changes
   const [incSimple, setIncSimple] = useState(NaN);
   const [incWork, setIncWork] = useState(NaN);
   const [incHustle, setIncHustle] = useState(NaN);
@@ -529,16 +523,41 @@ function App() {
   const [expInsurance, setExpInsurance] = useState(NaN);
   const [expUtilities, setExpUtilities] = useState(NaN);
   const [expOther, setExpOther] = useState(NaN);
-  // Savings (Simple: only liquid balance; Advanced: balances breakdown)
+  // Savings (balances; not cadence-dependent)
   const [liquidSavings, setLiquidSavings] = useState(NaN);
   const [balEmergency, setBalEmergency] = useState(NaN);
   const [balPretax, setBalPretax] = useState(NaN);
   const [balRoth, setBalRoth] = useState(NaN);
   const [balTaxable, setBalTaxable] = useState(NaN);
 
+  // Convert all cadence-dependent profile inputs when switching cadence
+  const handleCadenceChange = (next) => {
+    if (next === cadence) return;
+    const factor = (cadence === 'Monthly' && next === 'Annual') ? 12 : 1/12;
+    const conv = (v) => Number.isFinite(v) ? v * factor : v;
+
+    // Income
+    setIncSimple(prev => conv(prev));
+    setIncWork(prev => conv(prev));
+    setIncHustle(prev => conv(prev));
+    setIncTenants(prev => conv(prev));
+    // Expenses
+    setExpSimple(prev => conv(prev));
+    setExpHousing(prev => conv(prev));
+    setExpAuto(prev => conv(prev));
+    setExpFood(prev => conv(prev));
+    setExpEntertainment(prev => conv(prev));
+    setExpInsurance(prev => conv(prev));
+    setExpUtilities(prev => conv(prev));
+    setExpOther(prev => conv(prev));
+    // Savings balances remain unchanged
+
+    setCadence(next);
+  };
+
   // Convert entered values to MONTHLY totals for analysis
   const monthlyIncome = useMemo(() => {
-    const primaryToMonthly = v => cadence === 'Monthly' ? v : v / 12;
+    const primaryToMonthly = (v) => (cadence === 'Monthly' ? v : v / 12);
     if (incMode === 'Simple') return Number.isFinite(incSimple) ? primaryToMonthly(incSimple) : NaN;
     const parts = [incWork, incHustle, incTenants].map(primaryToMonthly);
     const sum = parts.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
@@ -546,7 +565,7 @@ function App() {
   }, [incMode, incSimple, incWork, incHustle, incTenants, cadence]);
 
   const monthlyExpenses = useMemo(() => {
-    const primaryToMonthly = v => cadence === 'Monthly' ? v : v / 12;
+    const primaryToMonthly = (v) => (cadence === 'Monthly' ? v : v / 12);
     if (expMode === 'Simple') return Number.isFinite(expSimple) ? primaryToMonthly(expSimple) : NaN;
     const parts = [expHousing, expAuto, expFood, expEntertainment, expInsurance, expUtilities, expOther].map(primaryToMonthly);
     const sum = parts.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
@@ -560,19 +579,18 @@ function App() {
     return sum > 0 ? sum : NaN;
   }, [savMode, liquidSavings, balEmergency, balPretax, balRoth, balTaxable]);
 
-  // Derived snapshot
-  const savingsRate = useMemo(() => {
-    if (!Number.isFinite(monthlyIncome) || monthlyIncome <= 0 || !Number.isFinite(monthlyExpenses)) return NaN;
-    const cap = Math.max(0, monthlyIncome - monthlyExpenses);
-    return cap / monthlyIncome;
+  // Disposable income / savings capacity (monthly)
+  const dispoMonthly = useMemo(() => {
+    if (!Number.isFinite(monthlyIncome) || !Number.isFinite(monthlyExpenses)) return NaN;
+    return Math.max(0, monthlyIncome - monthlyExpenses);
   }, [monthlyIncome, monthlyExpenses]);
 
-  const efMonths = useMemo(() => {
-    if (!Number.isFinite(totalSavingsBalance) || !Number.isFinite(monthlyExpenses) || monthlyExpenses <= 0) return NaN;
-    return totalSavingsBalance / monthlyExpenses;
-  }, [totalSavingsBalance, monthlyExpenses]);
+  const savingsPercent = useMemo(() => {
+    if (!Number.isFinite(monthlyIncome) || monthlyIncome <= 0 || !Number.isFinite(dispoMonthly)) return NaN;
+    return dispoMonthly / monthlyIncome;
+  }, [dispoMonthly, monthlyIncome]);
 
-  // Income conversions & estimated tax line (always computed from ANNUAL)
+  // Income conversions & estimated tax (based on annualized income)
   const annualIncomeForTax = useMemo(() => {
     if (!Number.isFinite(monthlyIncome)) return NaN;
     return monthlyIncome * 12;
@@ -582,7 +600,7 @@ function App() {
     return estFedTaxSingleEffective(annualIncomeForTax);
   }, [annualIncomeForTax]);
 
-  /* ===== Savings & Growth — unchanged core calcs (kept for parity) ===== */
+  /* ===== Savings & Growth ===== */
   const [sgPrincipal, setSgPrincipal] = useState(NaN);
   const [sgMonthly, setSgMonthly] = useState(NaN);
   const [sgAPR, setSgAPR] = useState(7);
@@ -591,10 +609,10 @@ function App() {
   const sgFV = useMemo(() => {
     const v = futureValue({
       principal: Number.isFinite(sgPrincipal) ? sgPrincipal : 0,
-      monthly: Number.isFinite(sgMonthly) ? sgMonthly : 0,
-      apr: Number.isFinite(sgAPR) ? sgAPR : 0,
-      years: Number.isFinite(sgYears) ? sgYears : 0 });
-
+      monthly:   Number.isFinite(sgMonthly)   ? sgMonthly   : 0,
+      apr:       Number.isFinite(sgAPR)       ? sgAPR       : 0,
+      years:     Number.isFinite(sgYears)     ? sgYears     : 0
+    });
     return Number.isFinite(v) ? v : NaN;
   }, [sgPrincipal, sgMonthly, sgAPR, sgYears]);
   const sgReqMonthly = useMemo(() => {
@@ -603,24 +621,24 @@ function App() {
       goal: goalFV,
       principal: Number.isFinite(sgPrincipal) ? sgPrincipal : 0,
       apr: Number.isFinite(sgAPR) ? sgAPR : 0,
-      years: Number.isFinite(sgYears) ? sgYears : 0 });
-
+      years: Number.isFinite(sgYears) ? sgYears : 0
+    });
     return Number.isFinite(m) ? m : NaN;
   }, [goalFV, sgPrincipal, sgAPR, sgYears]);
 
-  // Small mortgage card
+  // Mortgage mini-card
   const [loanP, setLoanP] = useState(250000);
   const [loanAPR, setLoanAPR] = useState(4);
   const [loanYears, setLoanYears] = useState(30);
   const loan = useMemo(() => loanPayment({
     principal: Number.isFinite(loanP) ? loanP : 0,
     apr: Number.isFinite(loanAPR) ? loanAPR : 0,
-    years: Number.isFinite(loanYears) ? loanYears : 0 }),
-  [loanP, loanAPR, loanYears]);
+    years: Number.isFinite(loanYears) ? loanYears : 0
+  }), [loanP, loanAPR, loanYears]);
 
   /* ===== Optimize Plan — strategies ===== */
   const [strategy, setStrategy] = useState('FIRE'); // 'FIRE' | 'Maximize Retirement' | 'Minimize Expenses'
-  // Optional debt inputs (for Minimize Expenses strategy)
+  // Optional debt inputs (for Minimize Expenses)
   const [optDebtAPR, setOptDebtAPR] = useState(NaN);
   const [optDebtBal, setOptDebtBal] = useState(NaN);
 
@@ -631,7 +649,6 @@ function App() {
 
     const mi = monthlyIncome;
     const me = monthlyExpenses;
-    const sr = savingsRate;
 
     if (!Number.isFinite(mi) || !Number.isFinite(me)) {
       bullets.push('Provide income and expenses to generate a plan.');
@@ -641,7 +658,7 @@ function App() {
     if (strategy === 'FIRE') {
       badge = 'FIRE';
       targets.push('Savings rate ≥ 50% of income');
-      if (Number.isFinite(sr)) bullets.push(`Current savings rate ≈ ${fmt1(sr * 100)}%`);
+      if (Number.isFinite(savingsPercent)) bullets.push(`Current savings rate ≈ ${fmt1(savingsPercent*100)}%`);
       bullets.push('Reduce recurring expenses (housing/transport/food) first.');
       bullets.push('Max out tax-advantaged accounts (401k/IRA/HSA) if eligible.');
       bullets.push('Favor low-fee, broad index funds for long horizon.');
@@ -650,7 +667,7 @@ function App() {
     if (strategy === 'Maximize Retirement') {
       badge = 'INVEST';
       targets.push('Automate 15–20% of gross income toward retirement');
-      if (Number.isFinite(sr)) bullets.push(`Current savings rate ≈ ${fmt1(sr * 100)}%`);
+      if (Number.isFinite(savingsPercent)) bullets.push(`Current savings rate ≈ ${fmt1(savingsPercent*100)}%`);
       bullets.push('Consider target-date or 80/20 stock/bond allocation (age-dependent).');
       bullets.push('Keep an emergency fund (3–6 months) to avoid high-interest debt.');
     }
@@ -668,470 +685,485 @@ function App() {
     }
 
     return { badge, bullets, targets };
-  }, [strategy, monthlyIncome, monthlyExpenses, savingsRate, optDebtAPR, optDebtBal]);
+  }, [strategy, monthlyIncome, monthlyExpenses, savingsPercent, optDebtAPR, optDebtBal]);
 
   /* ===== UI helpers ===== */
   const SecondaryLine = ({ primary, cadence }) => {
     if (!Number.isFinite(primary)) return null;
     if (cadence === 'Monthly') {
       const annual = primary * 12;
-      return /*#__PURE__*/React.createElement("div", { className: "text-[11px] text-slate-500 mt-1" }, "\u2248 ", fmtCurrency0(annual), " / yr");
+      return <div className="text-[11px] text-slate-500 mt-1">≈ {fmtCurrency0(annual)} / yr</div>;
     } else {
       const monthly = primary / 12;
-      return /*#__PURE__*/React.createElement("div", { className: "text-[11px] text-slate-500 mt-1" }, "\u2248 ", fmtCurrency0(monthly), " / mo");
+      return <div className="text-[11px] text-slate-500 mt-1">≈ {fmtCurrency0(monthly)} / mo</div>;
     }
   };
 
   const SmallTaxLine = () => {
     if (!Number.isFinite(annualIncomeForTax)) return null;
-    return /*#__PURE__*/(
-      React.createElement("div", { className: "text-[11px] text-slate-500 mt-1" }, "Est. federal effective tax (single): ",
-      fmtPercent1(taxEst.effective)));
-
-
+    return (
+      <div className="text-[11px] text-slate-500 mt-1">
+        Est. federal effective tax (single): {fmtPercent1(taxEst.effective)}
+      </div>
+    );
   };
 
   /* ===== Render ===== */
-  return /*#__PURE__*/(
-    React.createElement("div", { className: "max-w-5xl mx-auto px-4 py-6" }, /*#__PURE__*/
-
-    React.createElement("div", { className: "flex items-start sm:items-center gap-4 mb-4 animate-fadeUp" }, /*#__PURE__*/
-    React.createElement("div", {
-      className: "w-16 h-16 rounded-2xl bg-yellow-100 flex items-center justify-center text-3xl shadow bouncy select-none",
-      "aria-hidden": "true",
-      title: "Hi!" }, "\uD83D\uDE42"), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "flex-1 min-w-0" }, /*#__PURE__*/
-    React.createElement("h1", { className: "text-2xl md:text-3xl font-bold tracking-tight" }, "Finance Toolkit"), /*#__PURE__*/
-    React.createElement("p", { className: "text-slate-600" }, "Make compounding your superpower. Calm money now, loud money later.")), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "flex items-center gap-4" }, /*#__PURE__*/
-    React.createElement(CadenceToggle, { cadence: cadence, setCadence: setCadence }), /*#__PURE__*/
-    React.createElement(Social, null))), /*#__PURE__*/
-
-
-
-
-    React.createElement(Section, {
-      title: "Pick a Tool",
-      right: /*#__PURE__*/React.createElement("span", { className: "text-xs text-slate-500" }, "Everything updates automatically") }, /*#__PURE__*/
-
-    React.createElement("div", { className: "grid grid-cols-4 gap-2" },
-    ['Profile', 'Savings & Growth', 'Optimize Plan', 'Info'].map((v) => /*#__PURE__*/
-    React.createElement("button", {
-      key: v,
-      onClick: () => setView(v),
-      className: (view === v ? 'bg-slate-900 text-white ' : 'bg-white hover:bg-slate-50 ') +
-      'border rounded-2xl px-3 py-2 text-left transition-colors' },
-
-    v))), /*#__PURE__*/
-
-
-
-
-
-    React.createElement("div", { className: "mt-3 flex items-center justify-between text-sm text-slate-600" }, /*#__PURE__*/
-    React.createElement("div", { className: "flex items-center gap-2" }, /*#__PURE__*/
-    React.createElement("span", { className: "px-2 py-0.5 rounded bg-slate-100" }, "Fun fact"), /*#__PURE__*/
-    React.createElement("span", { key: factIdx, className: "animate-fadeUp" }, FUN[factIdx])), /*#__PURE__*/
-
-    React.createElement("button", {
-      className: "icon-btn hover:bg-slate-100",
-      "aria-label": "Shuffle fun fact",
-      title: "Shuffle fun fact",
-      onClick: shuffleFact }, /*#__PURE__*/
-
-
-    React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 24 24", className: "w-4 h-4", fill: "currentColor" }, /*#__PURE__*/
-    React.createElement("path", { d: "M7 3v2h.59L5 8.59 6.41 10 10 6.41V7h2V3H7zm10 0h4v4h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H17V3zM3 13h4v-2H3v2zm6.71 3.29 1.42 1.42L5 23h2v-2h.59l3.3-3.29-1.18-1.42zM19 14h2v4h-4v-2h1.59l-3.29-3.29 1.42-1.42L19 14.59V14z" }))))),
-
-
-
-
-
-
-    view === 'Profile' && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-
-    React.createElement(Section, {
-      title: "Income",
-      right: /*#__PURE__*/
-      React.createElement("div", { className: "text-xs text-slate-500" }, "Mode:",
-      ' ', /*#__PURE__*/
-      React.createElement("div", { className: "inline-flex rounded-full border bg-white overflow-hidden align-middle ml-1" },
-      ['Simple', 'Advanced'].map((m) => /*#__PURE__*/
-      React.createElement("button", {
-        key: m,
-        onClick: () => setIncMode(m),
-        className: (incMode === m ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50') + ' px-2 py-1' },
-      m)))) },
-
-
-
-
-
-    incMode === 'Simple' ? /*#__PURE__*/
-    React.createElement("div", { className: "grid sm:grid-cols-3 gap-4" }, /*#__PURE__*/
-    React.createElement("div", { className: "sm:col-span-2" }, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" },
-    cadence, " income ", cadence === 'Monthly' ? '' : '', " ", /*#__PURE__*/React.createElement(Info, { tip: `Enter your ${cadence.toLowerCase()} gross income. We'll show the conversion below and estimate federal taxes for a single filer (approx).` })), /*#__PURE__*/
-
-    React.createElement(CurrencyInput, {
-      value: incSimple,
-      onChange: setIncSimple,
-      placeholder: cadence === 'Monthly' ? fmtCurrency0(medianMonthlyIncome) : fmtCurrency0(medianAnnualIncome) }), /*#__PURE__*/
-
-    React.createElement(SecondaryLine, { primary: incSimple, cadence: cadence }), /*#__PURE__*/
-    React.createElement(SmallTaxLine, null))) : /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "grid sm:grid-cols-3 gap-4" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Work (",
-    cadence, ") ", /*#__PURE__*/React.createElement(Info, { tip: "Salary/wages before tax." })), /*#__PURE__*/
-
-    React.createElement(CurrencyInput, {
-      value: incWork,
-      onChange: setIncWork,
-      placeholder: cadence === 'Monthly' ? fmtCurrency0(medianMonthlyIncome * 0.8) : fmtCurrency0(medianAnnualIncome * 0.8) })), /*#__PURE__*/
-
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Hustle (",
-    cadence, ") ", /*#__PURE__*/React.createElement(Info, { tip: "Side gigs, freelance, small business income." })), /*#__PURE__*/
-
-    React.createElement(CurrencyInput, {
-      value: incHustle,
-      onChange: setIncHustle,
-      placeholder: cadence === 'Monthly' ? fmtCurrency0(300) : fmtCurrency0(3600) })), /*#__PURE__*/
-
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Tenants (",
-    cadence, ") ", /*#__PURE__*/React.createElement(Info, { tip: "Rental income (net of vacancy/maintenance if possible)." })), /*#__PURE__*/
-
-    React.createElement(CurrencyInput, {
-      value: incTenants,
-      onChange: setIncTenants,
-      placeholder: cadence === 'Monthly' ? fmtCurrency0(1200) : fmtCurrency0(14400) })), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "sm:col-span-3" }, /*#__PURE__*/
-    React.createElement("div", { className: "text-[11px] text-slate-500" }, "Sum auto-converted to monthly for analysis. Est. federal effective tax shown in header income (approx).")))), /*#__PURE__*/
-
-
-
-
-
-
-
-
-    React.createElement(Section, {
-      title: "Expenses",
-      right: /*#__PURE__*/
-      React.createElement("div", { className: "text-xs text-slate-500" }, "Mode:",
-      ' ', /*#__PURE__*/
-      React.createElement("div", { className: "inline-flex rounded-full border bg-white overflow-hidden align-middle ml-1" },
-      ['Simple', 'Advanced'].map((m) => /*#__PURE__*/
-      React.createElement("button", {
-        key: m,
-        onClick: () => setExpMode(m),
-        className: (expMode === m ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50') + ' px-2 py-1' },
-      m)))) },
-
-
-
-
-
-    expMode === 'Simple' ? /*#__PURE__*/
-    React.createElement("div", { className: "grid sm:grid-cols-2 gap-4" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" },
-    cadence, " expenses total ", /*#__PURE__*/React.createElement(Info, { tip: `Enter your ${cadence.toLowerCase()} total spending across categories.` })), /*#__PURE__*/
-
-    React.createElement(CurrencyInput, {
-      value: expSimple,
-      onChange: setExpSimple,
-      placeholder: cadence === 'Monthly' ? fmtCurrency0(medianMonthlyExpenses) : fmtCurrency0(medianMonthlyExpenses * 12) }), /*#__PURE__*/
-
-    React.createElement(SecondaryLine, { primary: expSimple, cadence: cadence }))) : /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "grid sm:grid-cols-3 gap-4" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Housing (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expHousing, onChange: setExpHousing, placeholder: cadence === 'Monthly' ? fmtCurrency0(1800) : fmtCurrency0(21600) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Auto/Transport (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expAuto, onChange: setExpAuto, placeholder: cadence === 'Monthly' ? fmtCurrency0(600) : fmtCurrency0(7200) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Food (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expFood, onChange: setExpFood, placeholder: cadence === 'Monthly' ? fmtCurrency0(600) : fmtCurrency0(7200) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Entertainment (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expEntertainment, onChange: setExpEntertainment, placeholder: cadence === 'Monthly' ? fmtCurrency0(250) : fmtCurrency0(3000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Insurance (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expInsurance, onChange: setExpInsurance, placeholder: cadence === 'Monthly' ? fmtCurrency0(400) : fmtCurrency0(4800) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Utilities (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expUtilities, onChange: setExpUtilities, placeholder: cadence === 'Monthly' ? fmtCurrency0(300) : fmtCurrency0(3600) })), /*#__PURE__*/
-
-    React.createElement("div", { className: "sm:col-span-3" }, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Other (", cadence, ")"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: expOther, onChange: setExpOther, placeholder: cadence === 'Monthly' ? fmtCurrency0(200) : fmtCurrency0(2400) })), /*#__PURE__*/
-
-    React.createElement("div", { className: "sm:col-span-3 text-[11px] text-slate-500" }, "Summed & auto-converted to monthly for analysis."))), /*#__PURE__*/
-
-
-
-
-
-
-
-    React.createElement(Section, {
-      title: "Savings",
-      right: /*#__PURE__*/
-      React.createElement("div", { className: "text-xs text-slate-500" }, "Mode:",
-      ' ', /*#__PURE__*/
-      React.createElement("div", { className: "inline-flex rounded-full border bg-white overflow-hidden align-middle ml-1" },
-      ['Simple', 'Advanced'].map((m) => /*#__PURE__*/
-      React.createElement("button", {
-        key: m,
-        onClick: () => setSavMode(m),
-        className: (savMode === m ? 'bg-slate-900 text-white' : 'text-slate-700 hover:bg-slate-50') + ' px-2 py-1' },
-      m)))) },
-
-
-
-
-
-    savMode === 'Simple' ? /*#__PURE__*/
-    React.createElement("div", { className: "grid sm:grid-cols-2 gap-4" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Liquid savings (USD) ", /*#__PURE__*/
-    React.createElement(Info, { tip: "Cash & cash equivalents readily available." })), /*#__PURE__*/
-
-    React.createElement(CurrencyInput, {
-      value: liquidSavings,
-      onChange: setLiquidSavings,
-      placeholder: fmtCurrency0(medianLiquidSavings) }))) : /*#__PURE__*/
-
-
-
-
-    React.createElement("div", { className: "grid sm:grid-cols-2 gap-4" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Emergency fund (USD)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: balEmergency, onChange: setBalEmergency, placeholder: fmtCurrency0(6000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Retirement \u2013 pretax (USD)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: balPretax, onChange: setBalPretax, placeholder: fmtCurrency0(35000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Retirement \u2013 Roth (USD)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: balRoth, onChange: setBalRoth, placeholder: fmtCurrency0(12000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Taxable brokerage (USD)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: balTaxable, onChange: setBalTaxable, placeholder: fmtCurrency0(8000) })), /*#__PURE__*/
-
-    React.createElement("div", { className: "sm:col-span-2 text-[11px] text-slate-500" }, "Totals shown below; balances are not auto-tax adjusted."))), /*#__PURE__*/
-
-
-
-
-
-
-
-    React.createElement(Section, { title: "Financial Health Snapshot", right: /*#__PURE__*/React.createElement(Social, null) }, /*#__PURE__*/
-    React.createElement("div", { className: "grid md:grid-cols-2 gap-4" }, /*#__PURE__*/
-    React.createElement("div", { className: "p-3 rounded-xl border bg-white/60" }, /*#__PURE__*/
-    React.createElement("div", { className: "font-medium mb-1 flex items-center" }, "Savings Rate", /*#__PURE__*/
-
-    React.createElement(Info, { tip: "Savings rate = (Monthly income − Monthly expenses) ÷ Monthly income.\nShows capacity to save/invest each month." })), /*#__PURE__*/
-
-    React.createElement("div", { className: "text-sm" }, "\u2248 ", /*#__PURE__*/
-    React.createElement("span", { className: "font-semibold" }, /*#__PURE__*/React.createElement(SmoothNumber, { value: Number.isFinite(savingsRate) ? savingsRate * 100 : NaN, format: "one" })), "% of income"), /*#__PURE__*/
-
-    React.createElement("p", { className: "text-xs text-slate-500 mt-1" }, "Many planners suggest ~15\u201320% toward retirement over decades.")), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "p-3 rounded-xl border bg-white/60" }, /*#__PURE__*/
-    React.createElement("div", { className: "font-medium mb-1 flex items-center" }, "Emergency Fund", /*#__PURE__*/
-
-    React.createElement(Info, { tip: "Months of expenses your savings can cover.\n3–6 months is a common guideline; more if income varies." })), /*#__PURE__*/
-
-    React.createElement("div", { className: "text-sm" }, "~ ", /*#__PURE__*/
-    React.createElement("span", { className: "font-semibold" }, /*#__PURE__*/React.createElement(SmoothNumber, { value: efMonths, format: "one" })), " months"), /*#__PURE__*/
-
-    React.createElement("p", { className: "text-xs text-slate-500 mt-1" }, "Balances include liquid + (optionally) other accounts in Advanced."))))),
-
-
-
-
-
-
-
-    view === 'Savings & Growth' && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement(Section, { title: "Savings & Growth", right: /*#__PURE__*/React.createElement(Social, null) }, /*#__PURE__*/
-    React.createElement("div", { className: "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Initial amount (USD)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: sgPrincipal, onChange: setSgPrincipal, placeholder: fmtCurrency0(10000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Monthly contribution (USD)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: sgMonthly, onChange: setSgMonthly, placeholder: fmtCurrency0(500) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Annual return (%) ", /*#__PURE__*/React.createElement(Info, { tip: "Average annual return assumption (long horizon)." })), /*#__PURE__*/
-    React.createElement("input", { type: "number", step: "0.1", className: "field", value: Number.isFinite(sgAPR) ? sgAPR : '', placeholder: "7", onChange: e => setSgAPR(parseFloat(e.target.value)) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Years"), /*#__PURE__*/
-    React.createElement("input", { type: "number", className: "field", value: Number.isFinite(sgYears) ? sgYears : '', placeholder: "30", onChange: e => setSgYears(parseFloat(e.target.value)) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Goal amount (optional)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: goalFV, onChange: setGoalFV, placeholder: fmtCurrency0(1000000) }))), /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "grid md:grid-cols-3 gap-3 mt-4" }, /*#__PURE__*/
-    React.createElement("div", { className: "p-3 rounded-xl border bg-white/60" }, /*#__PURE__*/
-    React.createElement("div", { className: "font-medium mb-1 flex items-center" }, "Projected future value ", /*#__PURE__*/React.createElement(Info, { tip: "Assumes monthly deposits at month-end; ignores taxes/fees.\nUse for rough planning only." })), /*#__PURE__*/
-    React.createElement("div", { className: "text-sm" }, /*#__PURE__*/React.createElement(SmoothNumber, { value: sgFV, format: "usd0" }))), /*#__PURE__*/
-
-    React.createElement("div", { className: "p-3 rounded-xl border bg-white/60" }, /*#__PURE__*/
-    React.createElement("div", { className: "font-medium mb-1" }, "If you targeted the goal\u2026"), /*#__PURE__*/
-    React.createElement("div", { className: "text-sm" }, "Required monthly: ", /*#__PURE__*/React.createElement(SmoothNumber, { value: sgReqMonthly, format: "usd0" }))), /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "p-3 rounded-xl border bg-white/60" }, /*#__PURE__*/
-    React.createElement("div", { className: "font-medium mb-1 flex items-center" }, "Mortgage / Loan", /*#__PURE__*/
-    React.createElement(Info, { tip: "Fixed-rate, fully amortized. Payment includes principal & interest." })), /*#__PURE__*/
-
-    React.createElement("div", { className: "grid grid-cols-3 gap-2 text-xs" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-[11px] text-slate-600" }, "Principal"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: loanP, onChange: setLoanP, placeholder: fmtCurrency0(250000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-[11px] text-slate-600" }, "APR %"), /*#__PURE__*/
-    React.createElement("input", { type: "number", step: "0.1", className: "field", value: Number.isFinite(loanAPR) ? loanAPR : '', onChange: e => setLoanAPR(parseFloat(e.target.value)), placeholder: "4" })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-[11px] text-slate-600" }, "Years"), /*#__PURE__*/
-    React.createElement("input", { type: "number", className: "field", value: Number.isFinite(loanYears) ? loanYears : '', onChange: e => setLoanYears(parseFloat(e.target.value)), placeholder: "30" }))), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "text-sm mt-2" }, "Monthly: ", /*#__PURE__*/React.createElement(SmoothNumber, { value: loan.pmt, format: "usd0" })), /*#__PURE__*/
-    React.createElement("div", { className: "text-xs text-slate-600" }, "Total interest: ", /*#__PURE__*/React.createElement(SmoothNumber, { value: loan.totalInterest, format: "usd0" })))), /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "text-xs text-slate-600 mt-2" }, "These are simplified calculations. For taxes, fees, and volatility, consult more detailed tools or a professional."))),
-
-
-
-
-
-
-
-    view === 'Optimize Plan' && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement(Section, { title: "Optimize Plan", right: /*#__PURE__*/React.createElement(Social, null) }, /*#__PURE__*/
-    React.createElement("div", { className: "grid sm:grid-cols-3 gap-3 mb-3" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "Strategy"), /*#__PURE__*/
-    React.createElement("select", { className: "field", value: strategy, onChange: e => setStrategy(e.target.value) }, /*#__PURE__*/
-    React.createElement("option", null, "FIRE"), /*#__PURE__*/
-    React.createElement("option", null, "Maximize Retirement"), /*#__PURE__*/
-    React.createElement("option", null, "Minimize Expenses"))),
-
-
-
-    strategy === 'Minimize Expenses' && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "High-APR debt balance (optional)"), /*#__PURE__*/
-    React.createElement(CurrencyInput, { value: optDebtBal, onChange: setOptDebtBal, placeholder: fmtCurrency0(4000) })), /*#__PURE__*/
-
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("label", { className: "block text-sm font-medium" }, "High-APR debt rate (%)"), /*#__PURE__*/
-    React.createElement("input", { type: "number", step: "0.1", className: "field", value: Number.isFinite(optDebtAPR) ? optDebtAPR : '', placeholder: "18", onChange: e => setOptDebtAPR(parseFloat(e.target.value)) })))), /*#__PURE__*/
-
-
-
-
-
-    React.createElement("div", { className: "p-3 rounded-2xl border bg-gradient-to-b from-white to-slate-50" }, /*#__PURE__*/
-    React.createElement("div", { className: "flex items-center justify-between mb-2" }, /*#__PURE__*/
-    React.createElement("div", { className: "text-lg font-semibold" }, "Recommendation"), /*#__PURE__*/
-    React.createElement("div", { className: "text-xs text-slate-500" }, "Monthly analysis")), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "space-y-2 animate-fadeUp" }, /*#__PURE__*/
-    React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /*#__PURE__*/
-    React.createElement("span", { className: "px-2 py-0.5 rounded-full text-xs border bg-white" }, rec.badge),
-    rec.targets.length > 0 ? /*#__PURE__*/
-    React.createElement("span", { className: "text-sm text-slate-700" }, "Targets:",
-
-    rec.targets.map((t) => /*#__PURE__*/
-    React.createElement("span", { key: t, className: "inline-block ml-2 px-2 py-0.5 rounded-full border bg-white" }, t))) : /*#__PURE__*/
-
-
-
-    React.createElement("span", { className: "text-sm text-slate-500" }, "Provide inputs to show targets")), /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "mt-1 text-sm space-y-2" }, /*#__PURE__*/
-    React.createElement("div", { className: "font-medium text-slate-700" }, "Because"), /*#__PURE__*/
-    React.createElement("ul", { className: "list-disc pl-5 space-y-1" },
-    rec.bullets.map((b, i) => /*#__PURE__*/React.createElement("li", { key: i }, b)))), /*#__PURE__*/
-
-
-
-    React.createElement("div", { className: "text-xs text-slate-600" }, "Notes: Educational content, not individualized advice. Adjust assumptions to your situation."))))),
-
-
-
-
-
-
-
-
-
-    view === 'Info' && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement(Section, { title: "Info", right: /*#__PURE__*/React.createElement("span", { className: "text-xs text-slate-500" }, "Quick references") }, /*#__PURE__*/
-    React.createElement(InfoPanel, null))), /*#__PURE__*/
-
-
-
-
-
-    React.createElement("div", { className: "text-center text-xs text-slate-500 space-y-2 mt-8 mb-8" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/React.createElement("a", { className: "underline", href: "https://www.investor.gov", target: "_blank", rel: "noreferrer" }, "Investor.gov")), /*#__PURE__*/
-    React.createElement("div", null, "Built for clarity, not financial advice. Consult a professional for personalized recommendations."))));
-
-
-
+  return (
+    <div className="max-w-5xl mx-auto px-4 py-6">
+      {/* Header: move cadence toggle + social UNDER the subtitle */}
+      <div className="flex items-start gap-4 mb-4 animate-fadeUp">
+        <div
+          className="w-16 h-16 rounded-2xl bg-yellow-100 flex items-center justify-center text-3xl shadow bouncy select-none"
+          aria-hidden="true"
+          title="Hi!"
+        >🙂</div>
+
+        <div className="flex-1 min-w-0">
+          <h1 className="text-2xl md:text-3xl font-bold tracking-tight">Finance Toolkit</h1>
+          <p className="text-slate-600">Make compounding your superpower. Calm money now, loud money later.</p>
+
+          {/* New row under subtitle for better phone readability */}
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <CadenceToggle cadence={cadence} onChange={handleCadenceChange} />
+            <Social />
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <Section
+        title="Pick a Tool"
+        right={<span className="text-xs text-slate-500">Everything updates automatically</span>}
+      >
+        <div className="grid grid-cols-4 gap-2">
+          {['Profile', 'Savings & Growth', 'Optimize Plan', 'Info'].map(v => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={(view === v ? 'bg-slate-900 text-white ' : 'bg-white hover:bg-slate-50 ') +
+                'border rounded-2xl px-3 py-2 text-left transition-colors'}
+            >
+              {v}
+            </button>
+          ))}
+        </div>
+
+        {/* Fun fact line + shuffle button */}
+        <div className="mt-3 flex items-center justify-between text-sm text-slate-600">
+          <div className="flex items-center gap-2">
+            <span className="px-2 py-0.5 rounded bg-slate-100">Fun fact</span>
+            <span key={factIdx} className="animate-fadeUp">{FUN[factIdx]}</span>
+          </div>
+          <button
+            className="icon-btn hover:bg-slate-100"
+            aria-label="Shuffle fun fact"
+            title="Shuffle fun fact"
+            onClick={shuffleFact}
+          >
+            {/* shuffle icon */}
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+              <path d="M7 3v2h.59L5 8.59 6.41 10 10 6.41V7h2V3H7zm10 0h4v4h-2V6.41l-3.29 3.3-1.42-1.42L17.59 5H17V3zM3 13h4v-2H3v2zm6.71 3.29 1.42 1.42L5 23h2v-2h.59l3.3-3.29-1.18-1.42zM19 14h2v4h-4v-2h1.59l-3.29-3.29 1.42-1.42L19 14.59V14z"/>
+            </svg>
+          </button>
+        </div>
+      </Section>
+
+      {/* PROFILE */}
+      {view === 'Profile' && (
+        <>
+          {/* Income */}
+          <Section
+            title="Income"
+            right={
+              <div className="text-xs text-slate-500">
+                Mode:{' '}
+                <div className="inline-flex rounded-full border bg-white overflow-hidden align-middle ml-1">
+                  {['Simple','Advanced'].map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setIncMode(m)}
+                      className={(incMode===m?'bg-slate-900 text-white':'text-slate-700 hover:bg-slate-50')+' px-2 py-1'}
+                    >{m}</button>
+                  ))}
+                </div>
+              </div>
+            }
+          >
+            {incMode === 'Simple' ? (
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-medium">
+                    {cadence} income <Info tip={`Enter your ${cadence.toLowerCase()} gross income. We'll show the conversion below and estimate federal taxes for a single filer (approx).`} />
+                  </label>
+                  <CurrencyInput
+                    value={incSimple}
+                    onChange={setIncSimple}
+                    placeholder={cadence==='Monthly' ? fmtCurrency0(medianMonthlyIncome) : fmtCurrency0(medianAnnualIncome)}
+                  />
+                  <SecondaryLine primary={incSimple} cadence={cadence} />
+                  <div className="text-[11px] text-slate-500 mt-1">
+                    Est. federal effective tax (single): {fmtPercent1(estFedTaxSingleEffective((Number.isFinite(incSimple)?(cadence==='Monthly'?incSimple*12:incSimple):NaN)).effective)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">
+                    Work ({cadence}) <Info tip="Salary/wages before tax." />
+                  </label>
+                  <CurrencyInput
+                    value={incWork}
+                    onChange={setIncWork}
+                    placeholder={cadence==='Monthly' ? fmtCurrency0(medianMonthlyIncome*0.8) : fmtCurrency0(medianAnnualIncome*0.8)}
+                  />
+                  <SecondaryLine primary={incWork} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">
+                    Hustle ({cadence}) <Info tip="Side gigs, freelance, small business income." />
+                  </label>
+                  <CurrencyInput
+                    value={incHustle}
+                    onChange={setIncHustle}
+                    placeholder={cadence==='Monthly' ? fmtCurrency0(300) : fmtCurrency0(3600)}
+                  />
+                  <SecondaryLine primary={incHustle} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">
+                    Tenants ({cadence}) <Info tip="Rental income (net of vacancy/maintenance if possible)." />
+                  </label>
+                  <CurrencyInput
+                    value={incTenants}
+                    onChange={setIncTenants}
+                    placeholder={cadence==='Monthly' ? fmtCurrency0(1200) : fmtCurrency0(14400)}
+                  />
+                  <SecondaryLine primary={incTenants} cadence={cadence} />
+                </div>
+                <div className="sm:col-span-3">
+                  <div className="text-[11px] text-slate-500">
+                    Sum auto-converted to monthly for analysis.
+                  </div>
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* Expenses */}
+          <Section
+            title="Expenses"
+            right={
+              <div className="text-xs text-slate-500">
+                Mode:{' '}
+                <div className="inline-flex rounded-full border bg-white overflow-hidden align-middle ml-1">
+                  {['Simple','Advanced'].map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setExpMode(m)}
+                      className={(expMode===m?'bg-slate-900 text-white':'text-slate-700 hover:bg-slate-50')+' px-2 py-1'}
+                    >{m}</button>
+                  ))}
+                </div>
+              </div>
+            }
+          >
+            {expMode === 'Simple' ? (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">
+                    {cadence} expenses total <Info tip={`Enter your ${cadence.toLowerCase()} total spending across categories.`} />
+                  </label>
+                  <CurrencyInput
+                    value={expSimple}
+                    onChange={setExpSimple}
+                    placeholder={cadence==='Monthly' ? fmtCurrency0(medianMonthlyExpenses) : fmtCurrency0(medianMonthlyExpenses*12)}
+                  />
+                  <SecondaryLine primary={expSimple} cadence={cadence} />
+                </div>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">Housing ({cadence})</label>
+                  <CurrencyInput value={expHousing} onChange={setExpHousing} placeholder={cadence==='Monthly'?fmtCurrency0(1800):fmtCurrency0(21600)} />
+                  <SecondaryLine primary={expHousing} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Auto/Transport ({cadence})</label>
+                  <CurrencyInput value={expAuto} onChange={setExpAuto} placeholder={cadence==='Monthly'?fmtCurrency0(600):fmtCurrency0(7200)} />
+                  <SecondaryLine primary={expAuto} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Food ({cadence})</label>
+                  <CurrencyInput value={expFood} onChange={setExpFood} placeholder={cadence==='Monthly'?fmtCurrency0(600):fmtCurrency0(7200)} />
+                  <SecondaryLine primary={expFood} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Entertainment ({cadence})</label>
+                  <CurrencyInput value={expEntertainment} onChange={setExpEntertainment} placeholder={cadence==='Monthly'?fmtCurrency0(250):fmtCurrency0(3000)} />
+                  <SecondaryLine primary={expEntertainment} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Insurance ({cadence})</label>
+                  <CurrencyInput value={expInsurance} onChange={setExpInsurance} placeholder={cadence==='Monthly'?fmtCurrency0(400):fmtCurrency0(4800)} />
+                  <SecondaryLine primary={expInsurance} cadence={cadence} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Utilities ({cadence})</label>
+                  <CurrencyInput value={expUtilities} onChange={setExpUtilities} placeholder={cadence==='Monthly'?fmtCurrency0(300):fmtCurrency0(3600)} />
+                  <SecondaryLine primary={expUtilities} cadence={cadence} />
+                </div>
+                <div className="sm:col-span-3">
+                  <label className="block text-sm font-medium">Other ({cadence})</label>
+                  <CurrencyInput value={expOther} onChange={setExpOther} placeholder={cadence==='Monthly'?fmtCurrency0(200):fmtCurrency0(2400)} />
+                  <SecondaryLine primary={expOther} cadence={cadence} />
+                </div>
+                <div className="sm:col-span-3 text-[11px] text-slate-500">
+                  Summed & auto-converted to monthly for analysis.
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* Savings (balances only in Simple; breakdown in Advanced) */}
+          <Section
+            title="Savings"
+            right={
+              <div className="text-xs text-slate-500">
+                Mode:{' '}
+                <div className="inline-flex rounded-full border bg-white overflow-hidden align-middle ml-1">
+                  {['Simple','Advanced'].map(m => (
+                    <button
+                      key={m}
+                      onClick={() => setSavMode(m)}
+                      className={(savMode===m?'bg-slate-900 text-white':'text-slate-700 hover:bg-slate-50')+' px-2 py-1'}
+                    >{m}</button>
+                  ))}
+                </div>
+              </div>
+            }
+          >
+            {savMode === 'Simple' ? (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">
+                    Liquid savings (USD) <Info tip="Cash & cash equivalents readily available." />
+                  </label>
+                  <CurrencyInput
+                    value={liquidSavings}
+                    onChange={setLiquidSavings}
+                    placeholder={fmtCurrency0(medianLiquidSavings)}
+                  />
+                </div>
+              </div>
+            ) : (
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium">Emergency fund (USD)</label>
+                  <CurrencyInput value={balEmergency} onChange={setBalEmergency} placeholder={fmtCurrency0(6000)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Retirement – pretax (USD)</label>
+                  <CurrencyInput value={balPretax} onChange={setBalPretax} placeholder={fmtCurrency0(35000)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Retirement – Roth (USD)</label>
+                  <CurrencyInput value={balRoth} onChange={setBalRoth} placeholder={fmtCurrency0(12000)} />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium">Taxable brokerage (USD)</label>
+                  <CurrencyInput value={balTaxable} onChange={setBalTaxable} placeholder={fmtCurrency0(8000)} />
+                </div>
+                <div className="sm:col-span-2 text-[11px] text-slate-500">
+                  Totals shown below; balances are not auto-tax adjusted.
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* Snapshot */}
+          <Section title="Financial Health Snapshot" right={<span className="text-xs text-slate-500">Monthly analysis</span>}>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="p-3 rounded-xl border bg-white/60">
+                <div className="font-medium mb-1 flex items-center">
+                  Disposable income / savings capacity
+                  <Info tip={"Disposable income (monthly) = Monthly income − Monthly expenses.\nThis is the amount you can direct to goals (emergency fund, investing, debt prepayment)."} />
+                </div>
+                <div className="text-sm">
+                  <span className="font-semibold"><SmoothNumber value={dispoMonthly} format="usd0" /></span> per month
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  That’s about {fmtPercent1(savingsPercent)} of income.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl border bg-white/60">
+                <div className="font-medium mb-1 flex items-center">
+                  Emergency Fund
+                  <Info tip={"Months of expenses your savings can cover.\n3–6 months is a common guideline; more if income varies."} />
+                </div>
+                <div className="text-sm">
+                  ~ <span className="font-semibold"><SmoothNumber value={totalSavingsBalance / (Number.isFinite(monthlyExpenses)&&monthlyExpenses>0?monthlyExpenses:NaN)} format="one" /></span> months
+                </div>
+                <p className="text-xs text-slate-500 mt-1">Balances include liquid + (optionally) other accounts in Advanced.</p>
+              </div>
+            </div>
+          </Section>
+        </>
+      )}
+
+      {/* SAVINGS & GROWTH */}
+      {view === 'Savings & Growth' && (
+        <>
+          <Section title="Savings & Growth" right={<span className="text-xs text-slate-500">Monthly contributions</span>}>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-sm font-medium">Initial amount (USD)</label>
+                <CurrencyInput value={sgPrincipal} onChange={setSgPrincipal} placeholder={fmtCurrency0(10000)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Monthly contribution (USD)</label>
+                <CurrencyInput value={sgMonthly} onChange={setSgMonthly} placeholder={fmtCurrency0(500)} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Annual return (%) <Info tip={"Average annual return assumption (long horizon)."} /></label>
+                <input type="number" step="0.1" className="field" value={Number.isFinite(sgAPR)?sgAPR:''} placeholder="7" onChange={e => setSgAPR(parseFloat(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Years</label>
+                <input type="number" className="field" value={Number.isFinite(sgYears)?sgYears:''} placeholder="30" onChange={e => setSgYears(parseFloat(e.target.value))} />
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Goal amount (optional)</label>
+                <CurrencyInput value={goalFV} onChange={setGoalFV} placeholder={fmtCurrency0(1000000)} />
+              </div>
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-3 mt-4">
+              <div className="p-3 rounded-xl border bg-white/60">
+                <div className="font-medium mb-1 flex items-center">Projected future value <Info tip={"Assumes monthly deposits at month-end; ignores taxes/fees.\nUse for rough planning only."} /></div>
+                <div className="text-sm"><SmoothNumber value={sgFV} format="usd0" /></div>
+              </div>
+              <div className="p-3 rounded-xl border bg-white/60">
+                <div className="font-medium mb-1">If you targeted the goal…</div>
+                <div className="text-sm">Required monthly: <SmoothNumber value={sgReqMonthly} format="usd0" /></div>
+              </div>
+
+              {/* Mortgage mini-card */}
+              <div className="p-3 rounded-xl border bg-white/60">
+                <div className="font-medium mb-1 flex items-center">Mortgage / Loan
+                  <Info tip={"Fixed-rate, fully amortized. Payment includes principal & interest."} />
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <label className="block text-[11px] text-slate-600">Principal</label>
+                    <CurrencyInput value={loanP} onChange={setLoanP} placeholder={fmtCurrency0(250000)} />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600">APR %</label>
+                    <input type="number" step="0.1" className="field" value={Number.isFinite(loanAPR)?loanAPR:''} onChange={e => setLoanAPR(parseFloat(e.target.value))} placeholder="4" />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-600">Years</label>
+                    <input type="number" className="field" value={Number.isFinite(loanYears)?loanYears:''} onChange={e => setLoanYears(parseFloat(e.target.value))} placeholder="30" />
+                  </div>
+                </div>
+                <div className="text-sm mt-2">Monthly: <SmoothNumber value={loan.pmt} format="usd0" /></div>
+                <div className="text-xs text-slate-600">Total interest: <SmoothNumber value={loan.totalInterest} format="usd0" /></div>
+              </div>
+            </div>
+
+            <div className="text-xs text-slate-600 mt-2">
+              These are simplified calculations. For taxes, fees, and volatility, consult more detailed tools or a professional.
+            </div>
+          </Section>
+        </>
+      )}
+
+      {/* OPTIMIZE PLAN */}
+      {view === 'Optimize Plan' && (
+        <>
+          <Section title="Optimize Plan" right={<span className="text-xs text-slate-500">Monthly analysis</span>}>
+            <div className="grid sm:grid-cols-3 gap-3 mb-3">
+              <div>
+                <label className="block text-sm font-medium">Strategy</label>
+                <select className="field" value={strategy} onChange={e => setStrategy(e.target.value)}>
+                  <option>FIRE</option>
+                  <option>Maximize Retirement</option>
+                  <option>Minimize Expenses</option>
+                </select>
+              </div>
+
+              {strategy === 'Minimize Expenses' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium">High-APR debt balance (optional)</label>
+                    <CurrencyInput value={optDebtBal} onChange={setOptDebtBal} placeholder={fmtCurrency0(4000)} />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium">High-APR debt rate (%)</label>
+                    <input type="number" step="0.1" className="field" value={Number.isFinite(optDebtAPR)?optDebtAPR:''} placeholder="18" onChange={e => setOptDebtAPR(parseFloat(e.target.value))} />
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="p-3 rounded-2xl border bg-gradient-to-b from-white to-slate-50">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-lg font-semibold">Recommendation</div>
+                <div className="text-xs text-slate-500">Emergency → Debt → Invest</div>
+              </div>
+
+              <div className="space-y-2 animate-fadeUp">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2 py-0.5 rounded-full text-xs border bg-white">{rec.badge}</span>
+                  {rec.targets.length > 0 ? (
+                    <span className="text-sm text-slate-700">
+                      Targets:
+                      {rec.targets.map(t => (
+                        <span key={t} className="inline-block ml-2 px-2 py-0.5 rounded-full border bg-white">{t}</span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-sm text-slate-500">Provide inputs to show targets</span>
+                  )}
+                </div>
+
+                <div className="mt-1 text-sm space-y-2">
+                  <div className="font-medium text-slate-700">Because</div>
+                  <ul className="list-disc pl-5 space-y-1">
+                    {rec.bullets.map((b, i) => <li key={i}>{b}</li>)}
+                  </ul>
+                </div>
+
+                <div className="text-xs text-slate-600">
+                  Notes: Educational content, not individualized advice. Adjust assumptions to your situation.
+                </div>
+              </div>
+            </div>
+          </Section>
+        </>
+      )}
+
+      {/* INFO */}
+      {view === 'Info' && (
+        <>
+          <Section title="Info" right={<span className="text-xs text-slate-500">Quick references</span>}>
+            <InfoPanel />
+          </Section>
+        </>
+      )}
+
+      {/* Footer */}
+      <div className="text-center text-xs text-slate-500 space-y-2 mt-8 mb-8">
+        <div><a className="underline" href="https://www.investor.gov" target="_blank" rel="noreferrer">Investor.gov</a></div>
+        <div>Built for clarity, not financial advice. Consult a professional for personalized recommendations.</div>
+      </div>
+    </div>
+  );
 }
 
 /* Mount */
-ReactDOM.createRoot(document.getElementById('root')).render( /*#__PURE__*/React.createElement(App, null));
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
