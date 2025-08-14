@@ -507,12 +507,15 @@ function refinanceScenario({
 }
 
 /* SVG Line Chart (Baseline vs Scenario) with metric selection */
-/* PATCH — InterestChart with numeric ticks and 2 metrics */
+/* PATCH — InterestChart with non-overlapping axis labels */
 function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
-  const width = 860,height = 320,pad = 32;
-  const W = width - pad * 2,H = height - pad * 2;
+  // Separate paddings so we can give the x-axis more room
+  const width = 860,height = 340;
+  const pad = { top: 24, right: 24, bottom: 56, left: 68 };
+  const W = width - pad.left - pad.right;
+  const H = height - pad.top - pad.bottom;
 
-  // Pick Y based on the metric (we only expose 2 metrics now)
+  // (We only expose 2 metrics now: total interest vs total principal)
   const pickY = r => metric === 'cumPrincipal' ? r.cumPrincipal : r.cumInterest;
 
   const maxM = Math.max((baseRows === null || baseRows === void 0 ? void 0 : baseRows.length) || 0, (altRows === null || altRows === void 0 ? void 0 : altRows.length) || 0, 1);
@@ -522,8 +525,8 @@ function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
   1);
 
 
-  const mapX = m => pad + m / maxM * W;
-  const mapY = y => pad + H - y / maxY * H;
+  const mapX = m => pad.left + m / maxM * W;
+  const mapY = y => pad.top + H - y / maxY * H;
 
   const pathFor = rows => {
     if (!(rows !== null && rows !== void 0 && rows.length)) return '';
@@ -536,7 +539,7 @@ function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
   const altPath = pathFor(altRows);
 
   // ===== Ticks =====
-  const numYTicks = 5; // 0%,25%,50%,75%,100%
+  const numYTicks = 5; // 0..100%
   const numXTicks = 5;
 
   const yTicks = Array.from({ length: numYTicks }, (_, i) => {
@@ -564,16 +567,16 @@ function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
   metric === 'cumPrincipal' ? 'Total principal payments (USD)' : 'Total interest payments (USD)';
 
   return /*#__PURE__*/(
-    React.createElement("svg", { viewBox: `0 0 ${width} ${height}`, className: "w-full h-[320px]" }, /*#__PURE__*/
+    React.createElement("svg", { viewBox: `0 0 ${width} ${height}`, className: "w-full h-[340px]" }, /*#__PURE__*/
 
-    React.createElement("rect", { x: pad, y: pad, width: W, height: H, fill: "white", stroke: "#e5e7eb" }),
+    React.createElement("rect", { x: pad.left, y: pad.top, width: W, height: H, fill: "white", stroke: "#e5e7eb" }),
 
 
     yTicks.map((t, i) => /*#__PURE__*/
     React.createElement("g", { key: `y-${i}` }, /*#__PURE__*/
-    React.createElement("line", { x1: pad, y1: t.y, x2: pad + W, y2: t.y, stroke: "#e5e7eb", strokeDasharray: "3 4" }), /*#__PURE__*/
+    React.createElement("line", { x1: pad.left, y1: t.y, x2: pad.left + W, y2: t.y, stroke: "#e5e7eb", strokeDasharray: "3 4" }), /*#__PURE__*/
     React.createElement("text", {
-      x: pad - 6,
+      x: pad.left - 8,
       y: t.y,
       fontSize: "10",
       fill: "#64748b",
@@ -588,11 +591,11 @@ function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
 
     xTicks.map((t, i) => /*#__PURE__*/
     React.createElement("g", { key: `x-${i}` }, /*#__PURE__*/
-    React.createElement("line", { x1: t.x, y1: pad, x2: t.x, y2: pad + H, stroke: "#eef2f7", strokeDasharray: "3 4" }), /*#__PURE__*/
+    React.createElement("line", { x1: t.x, y1: pad.top, x2: t.x, y2: pad.top + H, stroke: "#eef2f7", strokeDasharray: "3 4" }), /*#__PURE__*/
     React.createElement("text", {
       x: t.x,
-      y: pad + H - 4,
-      fontSize: "10",
+      y: pad.top + H + 16 // tick numbers
+      , fontSize: "10",
       fill: "#64748b",
       textAnchor: "middle" },
 
@@ -610,7 +613,7 @@ function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
 
 
 
-    React.createElement("g", { transform: `translate(${pad + 8}, ${pad + 8})` }, /*#__PURE__*/
+    React.createElement("g", { transform: `translate(${pad.left + 8}, ${pad.top + 8})` }, /*#__PURE__*/
     React.createElement("rect", { x: "0", y: "0", width: "190", height: "36", rx: "8", fill: "white", stroke: "#e5e7eb" }), /*#__PURE__*/
     React.createElement("g", { transform: "translate(10,10)" }, /*#__PURE__*/
     React.createElement("rect", { width: "18", height: "4", rx: "2", fill: "#94a3b8" }), /*#__PURE__*/
@@ -623,11 +626,29 @@ function InterestChart({ baseRows, altRows, metric = 'cumInterest' }) {
 
 
 
-    React.createElement("text", { x: pad + W / 2, y: height - 6, fontSize: "11", fill: "#64748b", textAnchor: "middle" }, "Months"), /*#__PURE__*/
-    React.createElement("text", { x: 14, y: pad + H / 2, fontSize: "11", fill: "#64748b", textAnchor: "middle", transform: `rotate(-90, 14, ${pad + H / 2})` }, yLabel)));
+    React.createElement("text", {
+      x: pad.left + W / 2,
+      y: height - 8 // below tick numbers
+      , fontSize: "11",
+      fill: "#64748b",
+      textAnchor: "middle" }, "Months"), /*#__PURE__*/
+
+
+
+    React.createElement("text", {
+      x: 16,
+      y: pad.top + H / 2,
+      fontSize: "11",
+      fill: "#64748b",
+      textAnchor: "middle",
+      transform: `rotate(-90, 16, ${pad.top + H / 2})` },
+
+    yLabel)));
+
 
 
 }
+
 
 
 
